@@ -21,6 +21,7 @@ class Process:
         arrival_time (int): The time tick at which the process arrives.
         burst_time (int): The total CPU time required by the process.
         tickets (int): The number of tickets for Stride Scheduling.
+        priority (int): The priority level for Priority Scheduling (lower number is higher priority).
         
         remaining_burst (int): CPU time left for the process to complete.
         start_time (int): The time tick when the process first runs.
@@ -33,11 +34,12 @@ class Process:
         turnaround_time (int): Total time from arrival to completion.
         response_time (int): Time from arrival to first execution.
     """
-    def __init__(self, name, arrival_time, burst_time, tickets=0):
+    def __init__(self, name, arrival_time, burst_time, tickets=0, priority=0):
         self.name = name
         self.arrival_time = int(arrival_time)
         self.burst_time = int(burst_time)
         self.tickets = int(tickets)
+        self.priority = int(priority)
 
         # Simulation state variables
         self.remaining_burst = self.burst_time
@@ -64,7 +66,8 @@ def get_algorithm_display_name(use_code):
         'fcfs': "First-Come First-Served",
         'sjf': "preemptive Shortest Job First",
         'rr': "Round-Robin",
-        'stride': "Stride Scheduling"
+        'stride': "Stride Scheduling",
+        'priority': "preemptive Priority Scheduling"
     }.get(use_code, "Unknown Algorithm")
 
 # --------------------------------------------------------------------------
@@ -123,10 +126,14 @@ def parse_input_file(filename):
                 name=p_info['name'],
                 arrival_time=p_info['arrival'],
                 burst_time=p_info['burst'],
-                tickets=p_info.get('tickets', 0)
+                tickets=p_info.get('tickets', 0),
+                priority=p_info.get('priority', 0)
             )
             if config['use'] == 'stride' and 'tickets' not in p_info:
                 print(f"Error: Process {p_info['name']} requires 'tickets' for Stride Scheduling.")
+                sys.exit(1)
+            if config['use'] == 'priority' and 'priority' not in p_info:
+                print(f"Error: Process {p_info['name']} requires 'priority' for Priority Scheduling.")
                 sys.exit(1)
             processes.append(proc)
         except (KeyError, IndexError):
@@ -150,7 +157,8 @@ def run_simulation(config, processes, out_file):
         'fcfs': run_fcfs,
         'sjf': run_sjf,
         'rr': run_rr,
-        'stride': run_stride
+        'stride': run_stride,
+        'priority': run_priority
     }
     
     # Get the appropriate simulation function for the selected algorithm
@@ -278,6 +286,36 @@ def run_stride(config, incoming_procs, out_file):
         log_tick(time, currently_running, out_file)
         time += 1
 
+def run_priority(config, incoming_procs, out_file):
+    """Preemptive Priority Scheduling. Lower number = higher priority."""
+    time, currently_running = 0, None
+    ready_queue = []
+    
+    while time < config['runfor']:
+        check_for_arrivals(time, incoming_procs, ready_queue, out_file)
+
+        if currently_running and currently_running.remaining_burst == 0:
+            handle_completion(time, currently_running, out_file)
+            currently_running = None
+
+        # This is the core preemption logic for Priority Scheduling.
+        # At each tick, we must decide if the current process still has the highest priority.
+        if ready_queue:
+            # Sort the ready queue to find the process with the highest priority (lowest value).
+            ready_queue.sort(key=lambda p: (p.priority, p.arrival_time))
+            highest_priority_in_queue = ready_queue[0]
+
+            if currently_running is None or \
+               highest_priority_in_queue.priority < currently_running.priority:
+                # If a higher-priority job is in the queue, preempt the current one.
+                if currently_running:
+                    ready_queue.append(currently_running)
+                currently_running = ready_queue.pop(0)
+                select_process(time, currently_running, out_file)
+
+        log_tick(time, currently_running, out_file)
+        time += 1
+
 # --------------------------------------------------------------------------
 # --- Simulation Helper Functions
 # --------------------------------------------------------------------------
@@ -356,4 +394,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
